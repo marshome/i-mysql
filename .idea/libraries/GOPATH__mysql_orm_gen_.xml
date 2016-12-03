@@ -1,0 +1,30 @@
+<component name="libraryTable">
+  <library name="GOPATH &lt;mysql-orm-gen&gt;">
+    <CLASSES>
+      <root url="file://$PROJECT_DIR$/../../../qunar" />
+      <root url="file://$PROJECT_DIR$/../../../honnef.co" />
+      <root url="file://$PROJECT_DIR$/../../../golang.org" />
+      <root url="file://$PROJECT_DIR$/../.." />
+      <root url="file://$PROJECT_DIR$/../../../k8s.io" />
+      <root url="file://$PROJECT_DIR$/../../../mars.com" />
+      <root url="file://$PROJECT_DIR$/../../../google.golang.org" />
+      <root url="file://$PROJECT_DIR$/../../../strk.kbt.io" />
+      <root url="file://$PROJECT_DIR$/../../../gopkg.in" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="file://$PROJECT_DIR$/../../../qunar" />
+      <root url="file://$PROJECT_DIR$/../../../honnef.co" />
+      <root url="file://$PROJECT_DIR$/../../../golang.org" />
+      <root url="file://$PROJECT_DIR$/../.." />
+      <root url="file://$PROJECT_DIR$/../../../k8s.io" />
+      <root url="file://$PROJECT_DIR$/../../../mars.com" />
+      <root url="file://$PROJECT_DIR$/../../../google.golang.org" />
+      <root url="file://$PROJECT_DIR$/../../../strk.kbt.io" />
+      <root url="file://$PROJECT_DIR$/../../../gopkg.in" />
+    </SOURCES>
+    <excluded>
+      <root url="file://$PROJECT_DIR$" />
+    </excluded>
+  </library>
+</component>
