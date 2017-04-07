@@ -41,6 +41,8 @@ func goType(typ string)(goType string) {
 		return "string"
 	} else if typ == "tinyint" {
 		return "int32"
+	} else if (typ == "longtext") {
+		return "string"
 	} else {
 		return typ
 	}
