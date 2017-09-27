@@ -30,6 +30,14 @@ func (g *Generator) Pn(format string, a ...interface{}) {
 	g.buf.WriteString(fmt.Sprintf(format+"\n", a...))
 }
 
+func (g *Generator) genErrorLog(msg string) {
+	g.Pn("        dao.logger.Error(\"%s\",zap.Error(err))", msg)
+}
+
+func (g *Generator) genDriverErrorLog() {
+	g.genErrorLog("sqlDriver")
+}
+
 func (g *Generator) genConstants(t *Table) {
 	g.Pn("const %s_TABLE_NAME = \"%s\"", strings.ToUpper(t.DbName), t.DbName)
 	g.Pn("")
@@ -37,10 +45,12 @@ func (g *Generator) genConstants(t *Table) {
 	var filedNameList []string
 	for _, v := range t.ColumnList {
 		g.Pn("const %s_FIELD_%s = \"%s\"", strings.ToUpper(t.DbName), strings.ToUpper(v.DbName), v.DbName)
-		filedNameList = append(filedNameList, fmt.Sprintf("\"%s\"", v.DbName))
+		filedNameList = append(filedNameList, fmt.Sprintf("%s", v.DbName))
 	}
 	g.Pn("")
-	g.Pn("var %s_ALL_FIELDS = []string{\n%s,\n}", strings.ToUpper(t.DbName), strings.Join(filedNameList, ",\n"))
+	g.Pn("const %s_ALL_FIELDS_STRING =\"%s\"", strings.ToUpper(t.DbName), strings.Join(filedNameList, ","))
+	g.Pn("")
+	g.Pn("var %s_ALL_FIELDS = []string{\n\"%s\",\n}", strings.ToUpper(t.DbName), strings.Join(filedNameList, "\",\n\""))
 }
 
 func (g *Generator) genEntity(t *Table) {
@@ -73,6 +83,7 @@ func (g *Generator) genPrepareInsertStmt(t *Table) {
 		strings.Join(fieldNames, ","),
 		strings.Join(fieldValues, ","))
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return err")
 	g.Pn("    }")
 	g.Pn("    ")
@@ -93,6 +104,7 @@ func (g *Generator) genPrepareUpdateStmt(t *Table) {
 	g.Pn("func (dao *%sDao) prepareUpdateStmt() (err error){", t.GoName)
 	g.Pn("    dao.updateStmt,err=dao.db.Prepare(\"UPDATE %s SET %s WHERE %s=?\")", t.DbName, strings.Join(fieldNames, ","), t.PrimaryColumn.DbName)
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return err")
 	g.Pn("    }")
 	g.Pn("    ")
@@ -105,6 +117,7 @@ func (g *Generator) genPrepareDeleteStmt(t *Table) {
 	g.Pn("func (dao *%sDao) prepareDeleteStmt() (err error){", t.GoName)
 	g.Pn("    dao.deleteStmt,err=dao.db.Prepare(\"DELETE FROM %s WHERE %s=?\")", t.DbName, t.PrimaryColumn.DbName)
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return err")
 	g.Pn("    }")
 	g.Pn("    ")
@@ -127,12 +140,13 @@ func (g *Generator) genPrepareSelectStmtBy(t *Table, columnList []*Column) {
 	}
 
 	g.Pn("func (dao *%sDao) prepareSelectStmtBy%s() (err error){", t.GoName, strings.Join(namesAdd, "And"))
-	g.Pn("    dao.selectStmtBy%s,err=dao.db.Prepare(\"SELECT %s FROM %s WHERE %s\")",
+	g.Pn("    dao.selectStmtBy%s,err=dao.db.Prepare(\"SELECT \"+%s+\" FROM %s WHERE %s\")",
 		strings.Join(namesAdd, "And"),
-		strings.Join(fieldNames, ","),
+		fmt.Sprintf("%s_ALL_FIELDS_STRING", strings.ToUpper(t.GoName)),
 		t.DbName,
 		strings.Join(conditionList, " AND "))
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return err")
 	g.Pn("    }")
 	g.Pn("    ")
@@ -148,10 +162,11 @@ func (g *Generator) genPrepareSelectStmtAll(t *Table) {
 	}
 
 	g.Pn("func (dao *%sDao) prepareSelectStmtAll() (err error){", t.GoName)
-	g.Pn("    dao.selectStmtAll,err=dao.db.Prepare(\"SELECT %s FROM %s\")",
-		strings.Join(fieldNames, ","),
+	g.Pn("    dao.selectStmtAll,err=dao.db.Prepare(\"SELECT \"+%s+\" FROM %s\")",
+		fmt.Sprintf("%s_ALL_FIELDS_STRING", strings.ToUpper(t.GoName)),
 		t.DbName)
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return err")
 	g.Pn("    }")
 	g.Pn("    ")
@@ -160,7 +175,7 @@ func (g *Generator) genPrepareSelectStmtAll(t *Table) {
 	g.Pn("")
 }
 
-func (g *Generator) genPrepareSelectStmt(t *Table) {
+func (g *Generator) genPrepareSelectStmts(t *Table) {
 	g.genPrepareSelectStmtAll(t)
 
 	if t.PrimaryColumn != nil {
@@ -316,11 +331,12 @@ func (g *Generator) genDaoDefSelectStmt(t *Table) {
 
 func (g *Generator) genDaoDef(t *Table) {
 	g.Pn("type %sDao struct{", t.GoName)
+	g.Pn("    logger *zap.Logger")
 	g.Pn("    db *sql.DB")
 	g.Pn("    insertStmt *sql.Stmt")
-	g.genDaoDefSelectStmt(t)
 	g.Pn("    updateStmt *sql.Stmt")
 	g.Pn("    deleteStmt *sql.Stmt")
+	g.genDaoDefSelectStmt(t)
 	g.Pn("}")
 	g.Pn("")
 }
@@ -328,7 +344,9 @@ func (g *Generator) genDaoDef(t *Table) {
 func (g *Generator) genDaoNew(t *Table) {
 	g.Pn("func New%sDao(db *sql.DB)(t *%sDao){", t.GoName, t.GoName)
 	g.Pn("    t=&%sDao{}", t.GoName)
+	g.Pn("    t.logger=pkg.TypedLogger(t)")
 	g.Pn("    t.db=db")
+	g.Pn("    ")
 	g.Pn("    return t")
 	g.Pn("}")
 	g.Pn("")
@@ -351,11 +369,13 @@ func (g *Generator) genInsert(t *Table) {
 	g.Pn("")
 	g.Pn("    result,err:=stmt.Exec(%s)", strings.Join(insertParams, ","))
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return 0,err")
 	g.Pn("    }")
 	g.Pn("")
 	g.Pn("    id,err=result.LastInsertId()")
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return 0,err")
 	g.Pn("    }")
 	g.Pn("")
@@ -373,7 +393,7 @@ func (g *Generator) genUpdate(t *Table) {
 		updateParams = append(updateParams, "e."+v.GoName)
 	}
 
-	g.Pn("func (dao *%sDao)Update(tx *sql.Tx,e *%s)(int64,error){", t.GoName, t.GoName)
+	g.Pn("func (dao *%sDao)Update(tx *sql.Tx,e *%s)(rowsAffected int64,err error){", t.GoName, t.GoName)
 	g.Pn("    stmt:=dao.updateStmt")
 	g.Pn("    if tx!=nil{")
 	g.Pn("        stmt=tx.Stmt(stmt)")
@@ -381,10 +401,17 @@ func (g *Generator) genUpdate(t *Table) {
 	g.Pn("")
 	g.Pn("    result,err:=stmt.Exec(%s,e.%s)", strings.Join(updateParams, ","), t.PrimaryColumn.GoName)
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return 0,err")
 	g.Pn("    }")
 	g.Pn("")
-	g.Pn("    return result.RowsAffected()")
+	g.Pn("	 rowsAffected,err=result.RowsAffected()")
+	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
+	g.Pn("        return 0,err")
+	g.Pn("    }")
+	g.Pn("")
+	g.Pn("    return rowsAffected,nil")
 	g.Pn("}")
 	g.Pn("")
 }
@@ -398,10 +425,17 @@ func (g *Generator) genDelete(t *Table) {
 	g.Pn("")
 	g.Pn("    result,err:=stmt.Exec(%s)", t.PrimaryColumn.DbName)
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return 0,err")
 	g.Pn("    }")
 	g.Pn("")
-	g.Pn("    return result.RowsAffected()")
+	g.Pn("	 rowsAffected,err=result.RowsAffected()")
+	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
+	g.Pn("        return 0,err")
+	g.Pn("    }")
+	g.Pn("")
+	g.Pn("    return rowsAffected,nil")
 	g.Pn("}")
 	g.Pn("")
 }
@@ -419,6 +453,7 @@ func (g *Generator) genScanRow(t *Table) {
 	g.Pn("        if err==sql.ErrNoRows{")
 	g.Pn("            return nil,nil")
 	g.Pn("        }else{")
+	g.genDriverErrorLog()
 	g.Pn("            return nil,err")
 	g.Pn("        }")
 	g.Pn("    }")
@@ -440,15 +475,36 @@ func (g *Generator) genScanRows(t *Table) {
 	g.Pn("        e:=%s{}", t.GoName)
 	g.Pn("        err=rows.Scan(%s)", strings.Join(scanParams, ","))
 	g.Pn("        if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("            return nil,err")
 	g.Pn("        }")
 	g.Pn("        list=append(list,&e)")
 	g.Pn("    }")
 	g.Pn("    if rows.Err()!=nil{")
-	g.Pn("        return nil,rows.Err()")
+	g.Pn("        err=rows.Err()")
+	g.genDriverErrorLog()
+	g.Pn("        return nil,err")
 	g.Pn("    }")
 	g.Pn("")
 	g.Pn("    return list,nil")
+	g.Pn("}")
+	g.Pn("")
+}
+
+func (g *Generator) genSelectAll(t *Table) {
+	g.Pn("func (dao *%sDao)SelectAll(tx *sql.Tx)(list []*%s,err error){", t.GoName, t.GoName)
+	g.Pn("    stmt:=dao.selectStmtAll")
+	g.Pn("    if tx!=nil{")
+	g.Pn("        stmt=tx.Stmt(stmt)")
+	g.Pn("    }")
+	g.Pn("")
+	g.Pn("    rows,err:=stmt.Query()")
+	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
+	g.Pn("        return nil,err")
+	g.Pn("    }")
+	g.Pn("")
+	g.Pn("    return dao.ScanRows(rows)")
 	g.Pn("}")
 	g.Pn("")
 }
@@ -468,9 +524,7 @@ func (g *Generator) genSelectBy(t *Table, columnList []*Column) {
 	g.Pn("        stmt=tx.Stmt(stmt)")
 	g.Pn("    }")
 	g.Pn("")
-	g.Pn("    row:=stmt.QueryRow(%s)", strings.Join(goNamesList, ","))
-	g.Pn("")
-	g.Pn("    return dao.ScanRow(row)")
+	g.Pn("    return dao.ScanRow(stmt.QueryRow(%s))", strings.Join(goNamesList, ","))
 	g.Pn("}")
 	g.Pn("")
 }
@@ -492,6 +546,7 @@ func (g *Generator) genSelectListBy(t *Table, columnList []*Column) {
 	g.Pn("")
 	g.Pn("    rows,err:=stmt.Query(%s)", strings.Join(goNamesList, ","))
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return nil,err")
 	g.Pn("    }")
 	g.Pn("")
@@ -500,15 +555,11 @@ func (g *Generator) genSelectListBy(t *Table, columnList []*Column) {
 	g.Pn("")
 }
 
-func (g *Generator) genSelectAll(t *Table) {
-	g.Pn("func (dao *%sDao)SelectAll(tx *sql.Tx)(list []*%s,err error){", t.GoName, t.GoName)
-	g.Pn("    stmt:=dao.selectStmtAll")
-	g.Pn("    if tx!=nil{")
-	g.Pn("        stmt=tx.Stmt(stmt)")
-	g.Pn("    }")
-	g.Pn("")
-	g.Pn("    rows,err:=stmt.Query()")
+func (g *Generator) genSelectList(t *Table) {
+	g.Pn("func (dao *%sDao)SelectList(tx *sql.Tx,query string)(list []*%s,err error){", t.GoName, t.GoName)
+	g.Pn("    rows,err:=dao.db.Query(\"SELECT \"+%s+\" FROM %s \"+query)", strings.ToUpper(t.DbName)+"_ALL_FIELDS_STRING", t.DbName)
 	g.Pn("    if err!=nil{")
+	g.genDriverErrorLog()
 	g.Pn("        return nil,err")
 	g.Pn("    }")
 	g.Pn("")
@@ -517,8 +568,9 @@ func (g *Generator) genSelectAll(t *Table) {
 	g.Pn("")
 }
 
-func (g *Generator) genSelect(t *Table) {
+func (g *Generator) genSelects(t *Table) {
 	g.genSelectAll(t)
+	g.genSelectList(t)
 
 	if t.PrimaryColumn != nil {
 		g.genSelectBy(t, []*Column{t.PrimaryColumn})
@@ -569,7 +621,7 @@ func (g *Generator) genDao(t *Table) {
 	g.genPrepareInsertStmt(t)
 	g.genPrepareUpdateStmt(t)
 	g.genPrepareDeleteStmt(t)
-	g.genPrepareSelectStmt(t)
+	g.genPrepareSelectStmts(t)
 
 	g.genInsert(t)
 	g.genUpdate(t)
@@ -577,7 +629,7 @@ func (g *Generator) genDao(t *Table) {
 
 	g.genScanRow(t)
 	g.genScanRows(t)
-	g.genSelect(t)
+	g.genSelects(t)
 }
 
 func (g *Generator) gen() {
@@ -585,6 +637,8 @@ func (g *Generator) gen() {
 	g.Pn("")
 	g.Pn("import(")
 	g.Pn("    \"database/sql\"")
+	g.Pn("    \"go.uber.org/zap\"")
+	g.Pn("\"github.com/NeuronEvolution/pkg\"")
 	g.Pn(")")
 	g.Pn("")
 	for _, v := range g.TableList {
