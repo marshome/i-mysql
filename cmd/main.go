@@ -1,21 +1,21 @@
 package main
 
 import (
-	"github.com/marshome/mysql-orm-gen/generator"
-	"io/ioutil"
-	"fmt"
 	"flag"
+	"fmt"
+	"github.com/marshome/i-mysql/generator"
+	"io/ioutil"
 )
 
 func main() {
 	sql_file_flag := flag.String("sql_file", "", "sql file")
 	orm_file_flag := flag.String("orm_file", "", "orm file")
-	package_name_flag:=flag.String("package_name","","package name")
+	package_name_flag := flag.String("package_name", "", "package name")
 	flag.Parse()
 
 	sql_file := *sql_file_flag
 	orm_file := *orm_file_flag
-	package_name:=*package_name_flag
+	package_name := *package_name_flag
 
 	if sql_file == "" {
 		fmt.Println("sql file null")
